@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import calendar
 import json
 import datetime
 import pytz
@@ -49,34 +50,52 @@ def full_cleanup():
 
 
 @check_logger
-def get(tag='__all__'):
+def get(tag='__all__', limit=None, min_ts=None, max_ts=None):
     """
     Get all records from the store
 
     Log records are returned in the reverse time order (latest first)
 
-    :param tag: if not equal to "__all__", then remove only records marked with
+    :param tag: if not equal to "__all__", then return only records marked with
                 the corresponding tag
+    :param limit: return at most this amount of records
+    :param min_ts: optional minimum timestamp point
+    :type min_ts: :class:`datetime.datetime` with optional tzinfo attached
+    :param max_ts: optional maximum timestamp point
+    :type max_ts: :class:`datetime.datetime` with optional tzinfo attached
+    :rtype: min_ts of :class:`tagged_logger.Log`
+
+
+    .. note:: Naive datetime objects are considered as having UTC tz and
+              converted to seconds since epoch accordingly
+
     """
-    return _logger.get(tag=tag)
+    return _logger.get(tag=tag, limit=limit, min_ts=min_ts, max_ts=max_ts)
 
 
 @check_logger
 def get_latest(tag='__all__'):
     """
     Get latest log record with a given tag or None
+
+    :rtype: :class:`tagged_logger.Log`
     """
     return _logger.get_latest(tag=tag)
 
 
-def log(message, tags=None):
+def log(message, tags=None, ts=None):
     """
     Create a new log record, optionally marked with one or more tags
 
     :type message: string or any jsonable object
     :type tags: list of strings
+    :param ts: optional timestamp of the log record
+    :type ts: :class:`datetime.datetime` object with optional timestamp set
+
+    .. note:: Naive datetime objects are considered as having UTC tz and
+              converted to seconds since epoch accordingly
     """
-    return _logger.log(message, tags=tags)
+    return _logger.log(message, tags=tags, ts=ts)
 
 
 class Logger(object):
@@ -95,10 +114,12 @@ class Logger(object):
             if keys:
                 self.redis.delete(*keys)
 
-
-    def log(self, message, tags=None):
+    def log(self, message, tags=None, ts=None):
         _id = self._id()
-        timestamp = time.time()
+        if ts is not None:
+            timestamp = _dt2ts(ts)
+        else:
+            timestamp = time.time()
         # save log record
         log_record_key = self._key('msg:{0}', _id)
         log_record_value = {
@@ -110,14 +131,20 @@ class Logger(object):
         self.redis.set(log_record_key, str_log_record)
         # save log record reference to flows
         flow_all = self._key('flow:__all__')
-        self.redis.lpush(flow_all, _id)
+        self.redis.zadd(flow_all, _id, timestamp)
         for tag in tags or []:
             flow_key = self._key('flow:{0}', tag)
-            self.redis.lpush(flow_key, _id)
+            self.redis.zadd(flow_key, _id, timestamp)
 
-    def get(self, tag='__all__'):
+    def get(self, tag='__all__', limit=None, min_ts=None, max_ts=None):
         key = self._key('flow:{0}', tag)
-        record_ids = self.redis.lrange(key, 0, -1)
+
+        max = _dt2ts(max_ts) if max_ts else float('inf')
+        min = _dt2ts(min_ts) if min_ts else 0
+        start = None if limit is None else 0
+
+        record_ids = self.redis.zrevrangebyscore(key, max, min, start=start,
+                                                 num=limit)
         if not record_ids:
             return []
         record_keys = [self._key('msg:{0}', _id) for _id in record_ids]
@@ -125,19 +152,12 @@ class Logger(object):
         return [Log(record) for record in records]
 
     def get_latest(self, tag='__all__'):
-        key = self._key('flow:{0}', tag)
-        _ids = self.redis.lrange(key, 0, 1)
-        if not _ids:
-            return None
-        msg_key = self._key('msg:{0}', _ids[0])
-        record = self.redis.get(msg_key)
-        return Log(record)
-
+        get_result = self.get(tag, limit=1)
+        return get_result and get_result[0]
 
     def _id(self):
         cnt = self._key('counter')
         return self.redis.incr(cnt)
-
 
     def _key(self, key, *args, **kwargs):
         if self.prefix:
@@ -166,3 +186,16 @@ class Log(object):
 
     def __repr__(self):
         return '<Log@%s: %r>' % (self.ts, self.message)
+
+
+def _dt2ts(dt):
+    """
+    Convert datetime objects to correct timestamps
+
+    Consider naive datetimes as UTC ones
+    """
+    if not dt.tzinfo:
+        dt = pytz.utc.localize(dt)
+    micro = dt.microsecond / 1e6
+    ts = calendar.timegm(dt.timetuple())
+    return ts + micro
