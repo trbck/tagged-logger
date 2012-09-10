@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
+import threading
+import copy
 import calendar
 import json
 import datetime
 import pytz
 import redis
-from functools import wraps
 import time
+
+from functools import wraps
+from contextlib import contextmanager
 
 
 _logger = None
@@ -98,10 +102,41 @@ def log(message, tags=None, ts=None):
     return _logger.log(message, tags=tags, ts=ts)
 
 
+def context(tags=None, attrs=None):
+    return _logger.context(tags=tags, attrs=attrs)
+
+
+def add_tags(*tags):
+    return _logger.add_tags(*tags)
+
+
+def rm_tags(*tags):
+    return _logger.rm_tags(*tags)
+
+
+def add_attrs(**attrs):
+    return _logger.add_attrs(**attrs)
+
+
+def rm_attrs(*attrs):
+    return _logger.rm_attrs(*attrs)
+
+
+def reset_context():
+    return _logger.reset_context()
+
+
 class Logger(object):
 
     def __init__(self, prefix=None, **kwargs):
         self.configure(prefix=prefix, **kwargs)
+        self._context = threading.local()
+
+    def ensure_context(self):
+        if not hasattr(self._context, 'tags'):
+            self._context.tags = []
+        if not hasattr(self._context, 'attrs'):
+            self._context.attrs = {}
 
     def configure(self, prefix=None, **kwargs):
         self.prefix = prefix or ''
@@ -115,6 +150,7 @@ class Logger(object):
                 self.redis.delete(*keys)
 
     def log(self, message, tags=None, ts=None):
+        self.ensure_context()
         _id = self._id()
         if ts is not None:
             timestamp = _dt2ts(ts)
@@ -125,16 +161,23 @@ class Logger(object):
         log_record_value = {
             'id': _id,
             'ts': timestamp,
-            'message': message,
+            'message': self._extend_message(message),
         }
         str_log_record = json.dumps(log_record_value)
         self.redis.set(log_record_key, str_log_record)
         # save log record reference to flows
         flow_all = self._key('flow:__all__')
         self.redis.zadd(flow_all, _id, timestamp)
-        for tag in tags or []:
+        result_tags = (tags or []) + self._context.tags
+        for tag in result_tags:
             flow_key = self._key('flow:{0}', tag)
             self.redis.zadd(flow_key, _id, timestamp)
+
+    def _extend_message(self, message):
+        if isinstance(message, dict):
+            message = message.copy()
+            message.update(self._context.attrs)
+        return message
 
     def get(self, tag='__all__', limit=None, min_ts=None, max_ts=None):
         key = self._key('flow:{0}', tag)
@@ -167,6 +210,44 @@ class Logger(object):
         if args or kwargs:
             template = template.format(*args, **kwargs)
         return template
+
+    @contextmanager
+    def context(self, tags=None, attrs=None):
+        self.ensure_context()
+        old_tags = copy.copy(self._context.tags)
+        old_attrs = self._context.attrs.copy()
+        self._context.tags += tags or []
+        self._context.attrs.update(attrs or {})
+        try:
+            yield
+        finally:
+            self._context.tags = old_tags
+            self._context.attrs = old_attrs
+
+    def add_tags(self, *tags):
+        self.ensure_context()
+        for tag in tags:
+            if tag not in self._context.tags:
+                self._context.tags.append(tag)
+
+    def rm_tags(self, *tags):
+        self.ensure_context()
+        for tag in tags:
+            if tag in self._context.tags:
+                self._context.tags.remove(tag)
+
+    def add_attrs(self, **attrs):
+        self.ensure_context()
+        self._context.attrs.update(attrs)
+
+    def rm_attrs(self, *attrs):
+        self.ensure_context()
+        for attr in attrs:
+            self._context.attrs.pop(attr, None)
+
+    def reset_context(self):
+        self._context.attrs = {}
+        self._context.tags = []
 
 
 class Log(object):

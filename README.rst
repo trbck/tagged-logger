@@ -59,6 +59,79 @@ More filtering, formatting, expiration-related and other features coming soon.
 Stay tuned.
 
 
+Context support
+---------------
+
+The hardest thing you should cope with in logging is saving context. Usually
+it's a pain to store the context enough to write a complete and useful log message.
+For example, while developing a web application, you'd like to store a remote
+address of the request, probably the id of the authenticated client, if any,
+and so forth.
+
+In some web frameworks (for example, in Django) to do so you must drag the
+Request object up and down throughout the stack (pass the data from the request,
+down to the form, and then next to the overridden :func:`save` method of the
+model).
+
+To make the life easier, tagged logger offers the concept of context. You just
+push your data or the tags you like to mark your message, to the context, and
+then, all of a sudden, this extra data pops up to be saved along with your
+message upon the log() invocation.
+
+.. note:: it should be safe to use tagged logger in multithreaded environment,
+          because logging contexts use thread locals.
+
+Basically, there are two ways of working with context
+
+
+Manual context injection
+````````````````````````
+
+It's a quite easy and straightforward way of doing stuff. Just use two pairs of
+functions: :func:`add_tags` and :func:`rm_tags`, and :func:`add_attr`
+and :func:`rm_attr`. To clean up everything, use :func:`reset_context`
+
+For example, these two messages will be stored with tags "foo" and "bar"
+attached::
+
+    >>> logger.add_tags('foo', 'bar')
+    >>> logger.save('Message one')
+    >>> logger.save('Message two')
+
+Similarly, every dict you log can be extended with a set of extra attributes.
+It is safe to use plain string in messages, but in the latter case extra
+attributes won't be stored with the log::
+
+    >>> logger.add_attrs(remote_addr='127.0.0.1', user_id=123)
+    >>> logger.save({'text': 'User saved object foo'})
+    >>> logger.save('Just a text')
+
+
+At the end, don't forget to clean up the context::
+
+    >>> logger.reset_context()
+
+
+.. warning:: Be careful and don't forget to clean up the logger context after
+             use (for example, at the end of the HTTP request). Otherwise your
+             log data can leak out of control. Consider using context managers
+             instead of add/rm functions. Remember, one thread of web
+             application usually handles more than one HTTP request.
+
+Using context managers
+``````````````````````
+
+It is safe and somewhat more convenient to use context manager instead of
+manual injection of data::
+
+    >>> with logger.context(attrs={'remote_addr': '127.0.0.1'}, tags=['foo', ]):
+    ...     logger.save('Object foo saved')
+
+
+You can use nested context managers. Inner context managers will override or
+extend the context of their outer counterparts.
+
+
 Behind the scenes
 -----------------
 
