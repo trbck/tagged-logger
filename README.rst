@@ -131,6 +131,22 @@ manual injection of data::
 You can use nested context managers. Inner context managers will override or
 extend the context of their outer counterparts.
 
+Catching messages in real time
+------------------------------
+
+Tagged-logger takes advantage of Redis ability to effectively send broadcast
+messages using the well-known publish-subscribe pattern.
+
+It is very easy to create a logger instance listening and handling for log
+message. The example is provided below::
+
+   >>> logger.subscribe()
+   >>> for message in logger.listen():
+   ...     print message
+   >>> logger.unsubscribe()
+
+This naive example can easily be extended to a fully fledged twitter-alike web
+service, yielding message from all your sources in the real time.
 
 Behind the scenes
 -----------------

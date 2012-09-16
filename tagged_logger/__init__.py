@@ -87,6 +87,7 @@ def get_latest(tag='__all__'):
     return _logger.get_latest(tag=tag)
 
 
+@check_logger
 def log(message, tags=None, ts=None):
     """
     Create a new log record, optionally marked with one or more tags
@@ -102,28 +103,49 @@ def log(message, tags=None, ts=None):
     return _logger.log(message, tags=tags, ts=ts)
 
 
+@check_logger
 def context(tags=None, attrs=None):
     return _logger.context(tags=tags, attrs=attrs)
 
 
+@check_logger
 def add_tags(*tags):
     return _logger.add_tags(*tags)
 
 
+@check_logger
 def rm_tags(*tags):
     return _logger.rm_tags(*tags)
 
 
+@check_logger
 def add_attrs(**attrs):
     return _logger.add_attrs(**attrs)
 
 
+@check_logger
 def rm_attrs(*attrs):
     return _logger.rm_attrs(*attrs)
 
 
+@check_logger
 def reset_context():
     return _logger.reset_context()
+
+
+@check_logger
+def subscribe():
+    return _logger.subscribe()
+
+
+@check_logger
+def unsubscribe():
+    return _logger.unsubscribe()
+
+
+@check_logger
+def listen():
+    return _logger.listen()
 
 
 class Logger(object):
@@ -137,6 +159,8 @@ class Logger(object):
             self._context.tags = []
         if not hasattr(self._context, 'attrs'):
             self._context.attrs = {}
+        if not hasattr(self._context, 'pubsub'):
+            self._context.pubsub = self.redis.pubsub()
 
     def configure(self, prefix=None, **kwargs):
         self.prefix = prefix or ''
@@ -172,6 +196,9 @@ class Logger(object):
         for tag in result_tags:
             flow_key = self._key('flow:{0}', tag)
             self.redis.zadd(flow_key, _id, timestamp)
+        # publish message
+        pubsub_channel = self._key('log-records')
+        self.redis.publish(pubsub_channel, str_log_record)
 
     def _extend_message(self, message):
         if isinstance(message, dict):
@@ -248,6 +275,22 @@ class Logger(object):
     def reset_context(self):
         self._context.attrs = {}
         self._context.tags = []
+
+    def subscribe(self):
+        self.ensure_context()
+        pubsub_channel = self._key('log-records')
+        self._context.pubsub.subscribe(pubsub_channel)
+
+    def unsubscribe(self):
+        self.ensure_context()
+        self._context.pubsub.unsubscribe()
+
+    def listen(self):
+        self.ensure_context()
+        for message in self._context.pubsub.listen():
+            if message['type'] == 'message':
+                data = message['data']
+                yield Log(data)
 
 
 class Log(object):
