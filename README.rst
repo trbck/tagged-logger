@@ -17,6 +17,15 @@ go logging like crazy::
    >>> logger.log('bar created', tags=['bar'])
    >>> logger.log('foo gets bar', tags=['foo', 'bar'])
 
+You can attach one or more tags or attributes to messages. Upon handling tags
+can be user to filter a subset of log records, and attributes can be
+used to extract the structured information from a particular record::
+
+   >>> logger.log('user logged in', user_id=1, user_login='u1')
+
+All the kwargs, passed to :func:`log` will be stored as log record attributes,
+in a separate field, json-encoded in the Redis database.
+
 To get data from logger, use :func:`get` or :func:`get_latest` method::
 
    >>> logger.get()
@@ -25,6 +34,14 @@ To get data from logger, use :func:`get` or :func:`get_latest` method::
    [<Log@...: u'foo gets bar'>, <Log@...: u'foo created'>]
    >>> logger.get_latest('bar')
    <Log@...: u'foo gets bar'>
+
+There is a :func:`__str__` method of the Log object which simply returns the
+log string. If there are any attributes attached, the string is interpolated
+with these attributes using "new style" python string substitution::
+
+   >>> logger.log('{user_login} logged in', user_login='foo')
+   >>> print str(logger.get_latest())
+   foo logged in
 
 Function :func:`get` can have additional filters to get only a limited subset of
 records. There are ``min_ts``, ``max_ts`` and ``limit`` options.
@@ -52,8 +69,6 @@ There are a couple of notes you should take into consideration:
    be the latest recorded one.
 2. Every log record has a timestamp attached, the timestamp goes in UTC with a
    tz attribute attached
-3. :class:`Log` objects have :func:`str` methods which simply call the str of
-   the underlying object.
 
 More filtering, formatting, expiration-related and other features coming soon.
 Stay tuned.

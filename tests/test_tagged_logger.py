@@ -21,11 +21,23 @@ def test_basic():
     assert str(records[1]) == 'foo'
 
 
-def test_objects():
-    obj = {'foo': 'bar'}
-    tagged_logger.log(obj)
+def test_attrs():
+    tagged_logger.log('sample message', foo='bar')
     record = tagged_logger.get_latest()
-    assert record.message == obj
+    assert record.attrs['foo'] == 'bar'
+
+def test_attrs_with_message():
+    tagged_logger.log('user logged in', user_name='foo')
+    record = tagged_logger.get_latest()
+    assert record.message == 'user logged in'
+    assert record.attrs['user_name'] == 'foo'
+
+
+def test_attrs_interpolate_message():
+    tagged_logger.log('{user} logged in', user='foo')
+    record = tagged_logger.get_latest()
+    assert str(record) == 'foo logged in'
+
 
 def test_limit():
     tagged_logger.log('foo')
@@ -44,6 +56,12 @@ def test_tags():
     assert len(all_records) == 4
     foo_records = tagged_logger.get(tag='foo')
     assert len(foo_records) == 2
+
+
+def test_message_stores_tags():
+    tagged_logger.log('foo created', tags=['foo',])
+    record = tagged_logger.get_latest()
+    assert record.tags == ['foo', ]
 
 
 def test_implicit_timestamps():
@@ -115,19 +133,10 @@ def test_context_attrs_dict():
     dictionary log message can be extended with attributes
     """
     with tagged_logger.context(attrs={'remote_addr': '127.0.0.1'}):
-        tagged_logger.log({'text': 'foo bar'})
-    record = tagged_logger.get_latest()
-    assert record.message['text'] == 'foo bar'
-    assert record.message['remote_addr'] == '127.0.0.1'
-
-
-def test_context_attrs_str():
-    """
-    text log message silently ignores extended attributes
-    """
-    with tagged_logger.context(attrs={'remote_addr': '127.0.0.1'}):
         tagged_logger.log('foo bar')
     record = tagged_logger.get_latest()
+    assert record.message == 'foo bar'
+    assert record.attrs['remote_addr'] == '127.0.0.1'
     assert record.message == 'foo bar'
 
 
@@ -156,17 +165,17 @@ def test_context_rm_tags():
 
 def test_context_add_attrs():
     tagged_logger.add_attrs(remote_addr='127.0.0.1')
-    tagged_logger.log({'text': 'sample message'})
+    tagged_logger.log('sample message')
     record = tagged_logger.get_latest()
-    assert record.message['remote_addr'] == '127.0.0.1'
+    assert record.attrs['remote_addr'] == '127.0.0.1'
 
 
 def test_context_rm_attrs():
     tagged_logger.add_attrs(remote_addr='127.0.0.1')
     tagged_logger.rm_attrs('remote_addr', 'baz')
-    tagged_logger.log({'text': 'sample message'})
+    tagged_logger.log('sample message')
     record = tagged_logger.get_latest()
-    assert record.message == {'text': 'sample message'}
+    assert record.attrs == {}
 
 
 def test_context_reset():

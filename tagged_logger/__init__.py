@@ -88,7 +88,7 @@ def get_latest(tag='__all__'):
 
 
 @check_logger
-def log(message, tags=None, ts=None):
+def log(message, **attrs):
     """
     Create a new log record, optionally marked with one or more tags
 
@@ -96,11 +96,13 @@ def log(message, tags=None, ts=None):
     :type tags: list of strings
     :param ts: optional timestamp of the log record
     :type ts: :class:`datetime.datetime` object with optional timestamp set
+    :param \*\*attrs: dictionary of log attributes to be stored in the
+                      database
 
     .. note:: Naive datetime objects are considered as having UTC tz and
               converted to seconds since epoch accordingly
     """
-    return _logger.log(message, tags=tags, ts=ts)
+    return _logger.log(message, **attrs)
 
 
 @check_logger
@@ -173,8 +175,13 @@ class Logger(object):
             if keys:
                 self.redis.delete(*keys)
 
-    def log(self, message, tags=None, ts=None):
+    def log(self, message, **attrs):
         self.ensure_context()
+
+        ts = attrs.pop('ts', None)
+        tags = self._extend_tags(attrs.pop('tags', None))
+        attrs = self._extend_attrs(attrs)
+
         _id = self._id()
         if ts is not None:
             timestamp = _dt2ts(ts)
@@ -185,26 +192,29 @@ class Logger(object):
         log_record_value = {
             'id': _id,
             'ts': timestamp,
-            'message': self._extend_message(message),
+            'message': message,
+            'attrs': attrs,
+            'tags': tags,
         }
         str_log_record = json.dumps(log_record_value)
         self.redis.set(log_record_key, str_log_record)
         # save log record reference to flows
         flow_all = self._key('flow:__all__')
         self.redis.zadd(flow_all, _id, timestamp)
-        result_tags = (tags or []) + self._context.tags
-        for tag in result_tags:
+        for tag in tags:
             flow_key = self._key('flow:{0}', tag)
             self.redis.zadd(flow_key, _id, timestamp)
         # publish message
         pubsub_channel = self._key('log-records')
         self.redis.publish(pubsub_channel, str_log_record)
 
-    def _extend_message(self, message):
-        if isinstance(message, dict):
-            message = message.copy()
-            message.update(self._context.attrs)
-        return message
+    def _extend_attrs(self, attrs):
+        attrs = attrs.copy()
+        attrs.update(self._context.attrs)
+        return attrs
+
+    def _extend_tags(self, tags):
+        return (tags or []) + self._context.tags
 
     def get(self, tag='__all__', limit=None, min_ts=None, max_ts=None):
         key = self._key('flow:{0}', tag)
@@ -299,17 +309,20 @@ class Log(object):
         record = json.loads(record_str)
         self.id = record['id']
         self.message = record['message']
+        self.attrs = record['attrs']
+        self.tags = record['tags']
         self.ts = datetime.datetime.fromtimestamp(record['ts'], pytz.utc)
         self.record = record
 
     def __str__(self):
-        return str(self.message)
+        return str(self.message.format(**self.attrs))
 
     def __unicode__(self):
-        return unicode(self.message)
+        return unicode(self.message.format(**self.attrs))
 
     def __repr__(self):
-        return '<Log@%s: %r>' % (self.ts, self.message)
+        return '<Log@%s: %r attrs=%r tags=%r>' % (self.ts, self.message,
+                                                  self.attrs, self.tags)
 
 
 def _dt2ts(dt):
