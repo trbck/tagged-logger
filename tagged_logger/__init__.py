@@ -96,6 +96,9 @@ def log(message, **attrs):
     :type tags: list of strings
     :param ts: optional timestamp of the log record
     :type ts: :class:`datetime.datetime` object with optional timestamp set
+    :param expire: optional expiration mark
+    :type expire: :class:`datetime.datetime` object or :class:`datetime.timedelta`
+              or :type:`int` (expiration in seconds since now)
     :param \*\*attrs: dictionary of log attributes to be stored in the
                       database
 
@@ -150,6 +153,11 @@ def listen():
     return _logger.listen()
 
 
+@check_logger
+def expire(ts=None):
+    return _logger.expire(ts=ts)
+
+
 class Logger(object):
 
     def __init__(self, prefix=None, **kwargs):
@@ -181,6 +189,7 @@ class Logger(object):
         ts = attrs.pop('ts', None)
         tags = self._extend_tags(attrs.pop('tags', None))
         attrs = self._extend_attrs(attrs)
+        expire = self._extend_expire(ts, attrs.pop('expire', None))
 
         _id = self._id()
         if ts is not None:
@@ -195,6 +204,7 @@ class Logger(object):
             'message': message,
             'attrs': attrs,
             'tags': tags,
+            'expire': _dt2ts(expire),
         }
         str_log_record = json.dumps(log_record_value)
         self.redis.set(log_record_key, str_log_record)
@@ -204,6 +214,12 @@ class Logger(object):
         for tag in tags:
             flow_key = self._key('flow:{0}', tag)
             self.redis.zadd(flow_key, _id, timestamp)
+        # add message to "expire" flow, if required
+        if expire:
+            expire_flow_key = self._key('flow:__expire__')
+            expire_ts = _dt2ts(expire)
+            print 'zadd', expire_flow_key, _id, expire_ts
+            self.redis.zadd(expire_flow_key, _id, expire_ts)
         # publish message
         pubsub_channel = self._key('log-records')
         self.redis.publish(pubsub_channel, str_log_record)
@@ -215,6 +231,15 @@ class Logger(object):
 
     def _extend_tags(self, tags):
         return (tags or []) + self._context.tags
+
+    def _extend_expire(self, ts, expire):
+        if expire is None:
+            return None
+        if isinstance(expire, datetime.datetime):
+            return expire
+        if isinstance(expire, datetime.timedelta):
+            return ts + expire
+        return ts + datetime.timedelta(seconds=expire)
 
     def get(self, tag='__all__', limit=None, min_ts=None, max_ts=None):
         key = self._key('flow:{0}', tag)
@@ -302,6 +327,30 @@ class Logger(object):
                 data = message['data']
                 yield Log(data)
 
+    def expire(self, ts=None):
+        ts = _dt2ts(ts) if ts else time.time()
+        flow_expire = self._key('flow:__expire__')
+        flow_all = self._key('flow:__all__')
+
+        record_ids = self.redis.zrevrangebyscore(flow_expire, ts, 0)
+        if not record_ids:
+            return 0
+        record_msgs = [self._key('msg:{0}'.format(_id)) for _id in record_ids]
+
+        records = self.redis.mget(*record_msgs)
+        pipe = self.redis.pipeline()
+        for record in records:
+            record_obj = Log(record)
+            pipe.zrem(flow_all, record_obj.id)
+            for tag in record_obj.tags:
+                flow = self._key('flow:{0}'.format(tag))
+                pipe.zrem(flow, record_obj.id)
+        pipe.zremrangebyscore(flow_expire, 0, ts)
+        pipe.delete(*record_msgs)
+        pipe.execute()
+        return len(records)
+
+
 
 class Log(object):
 
@@ -312,6 +361,11 @@ class Log(object):
         self.attrs = record['attrs']
         self.tags = record['tags']
         self.ts = datetime.datetime.fromtimestamp(record['ts'], pytz.utc)
+        if record['expire']:
+            self.expire = datetime.datetime.fromtimestamp(record['expire'],
+                                                          pytz.utc)
+        else:
+            self.expire = None
         self.record = record
 
     def __str__(self):
@@ -331,6 +385,8 @@ def _dt2ts(dt):
 
     Consider naive datetimes as UTC ones
     """
+    if dt is None:
+        return dt
     if not dt.tzinfo:
         dt = pytz.utc.localize(dt)
     micro = dt.microsecond / 1e6

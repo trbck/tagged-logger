@@ -163,6 +163,30 @@ message. The example is provided below::
 This naive example can easily be extended to a fully fledged twitter-alike web
 service, yielding message from all your sources in the real time.
 
+Expiration
+----------
+
+Because the tagged-logger is so incredibly fast and easy to use, you would
+probably like to log much more than you used to log before. Some of these
+log records may lose their value with time so fast, that you'd rather remove
+periodically outdated records.
+
+To simplify this, every record can be extended with the "expire" field. The
+expiration field can be passed to :func:`log` function as integer
+(expiration in seconds, since the time of the logging), timedelta (the same
+meaning, but more convenient with bigger timespans) or as the absolute value
+with the :class:`datetime.datetime` instance::
+
+   >>> logger.log('expire in one hour', expire=3600)
+   >>> logger.log('expire in one hour', expire=datetime.timedelta(hours=1))
+   >>> logger.log('expire on the day of doom',
+                   expire=datetime.datetime(2012, 12, 21))
+
+Although the outdated records won't be removed automatically, but it's your
+code which should periodically launch the cleaning process::
+
+   >>> logger.expire()
+
 Behind the scenes
 -----------------
 
@@ -176,7 +200,11 @@ identified by their tags. Currently we use following keys:
 - ``<prefix>:flow:<tag>`` --- keys for flows for given tags.
 - ``<prefix>:flow:__all__`` --- key for a special flow storing all available log
   messages
+- ``<prefix>:flow:__expire__`` --- key for a special flow storing log messages
+  to be removed on expiration.
 
 Flow is based on sorted sets indexed by timestamp. That's why :func:`get`
 operations with time-based limits are so fast (the processing time is estimated
 as O(log n) where n is the total number of records in the flow).
+
+The expiration flow uses expiration timestamps as the score value.
