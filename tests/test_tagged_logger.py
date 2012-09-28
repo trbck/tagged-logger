@@ -121,8 +121,8 @@ def test_naive_ts():
 
 
 def test_context_tags():
-    with tagged_logger.context(tags=['foo', 'bar']):
-        with tagged_logger.context(tags=['baz']):
+    with tagged_logger.context('foo', 'bar'):
+        with tagged_logger.context('baz'):
             tagged_logger.log('Random message', tags=['spam', ])
     for tag in ('__all__', 'foo', 'bar', 'baz', 'spam'):
         assert len(tagged_logger.get(tag)) == 1
@@ -132,7 +132,7 @@ def test_context_attrs_dict():
     """
     dictionary log message can be extended with attributes
     """
-    with tagged_logger.context(attrs={'remote_addr': '127.0.0.1'}):
+    with tagged_logger.context(remote_addr='127.0.0.1'):
         tagged_logger.log('foo bar')
     record = tagged_logger.get_latest()
     assert record.message == 'foo bar'
@@ -187,12 +187,12 @@ def test_context_reset():
 
 
 def _log_foo():
-    with tagged_logger.context(tags=['foo']):
+    with tagged_logger.context('foo'):
         tagged_logger.log('foo')
         time.sleep(0.2)
 
 def _log_bar():
-    with tagged_logger.context(tags=['bar']):
+    with tagged_logger.context('bar'):
         tagged_logger.log('bar')
         time.sleep(0.2)
 
