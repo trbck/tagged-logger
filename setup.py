@@ -13,6 +13,7 @@ setup(
     license='BSD',
     scripts=[
         'scripts/tagged_logger_listen.py',
+        'scripts/tagged_logger_get.py',
     ],
     install_requires=[
         'redis',
