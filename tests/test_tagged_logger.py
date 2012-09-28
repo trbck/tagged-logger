@@ -215,3 +215,9 @@ def test_context_multithread():
     bar_records = tagged_logger.get('bar')
     assert len(bar_records) == 1
     assert str(bar_records[0]) == 'bar'
+
+
+def test_missing_arguments():
+    tagged_logger.log('{user} {ip}', user='foo')
+    record = tagged_logger.get_latest()
+    assert str(record) == 'foo (undefined)'

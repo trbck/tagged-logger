@@ -10,10 +10,11 @@ import time
 
 from functools import wraps
 from contextlib import contextmanager
+from string import Formatter
 
 
 _logger = None
-
+MISSING_KEY = '(undefined)'
 
 def check_logger(func):
     """
@@ -417,6 +418,7 @@ ta = TaggingAttribute
 
 class Log(object):
 
+
     def __init__(self, record_str):
         record = json.loads(record_str)
         self.id = record['id']
@@ -432,15 +434,25 @@ class Log(object):
         self.record = record
 
     def __str__(self):
-        return str(self.message.format(**self.attrs))
+        formatter = LogFormatter()
+        return str(formatter.format(self.message, **self.attrs))
 
     def __unicode__(self):
-        return unicode(self.message.format(**self.attrs))
+        formatter = LogFormatter()
+        return unicode(formatter.format(self.message, **self.attrs))
 
     def __repr__(self):
         return '<Log@%s: %r attrs=%r tags=%r>' % (self.ts, self.message,
                                                   self.attrs, self.tags)
 
+
+class LogFormatter(Formatter):
+
+    def get_value(self, key, args, kwargs):
+        try:
+            return Formatter.get_value(self, key, args, kwargs)
+        except KeyError:
+            return MISSING_KEY
 
 def _dt2ts(dt):
     """
