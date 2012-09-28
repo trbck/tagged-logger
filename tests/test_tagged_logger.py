@@ -221,3 +221,9 @@ def test_missing_arguments():
     tagged_logger.log('{user} {ip}', user='foo')
     record = tagged_logger.get_latest()
     assert str(record) == 'foo (undefined)'
+
+
+def test_extra_arguments():
+    tagged_logger.log('{user}', user='foo', user_email='foo@example.com')
+    record = tagged_logger.get_latest()
+    assert str(record) == 'foo (user_email=foo@example.com)'

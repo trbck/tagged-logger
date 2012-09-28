@@ -435,11 +435,11 @@ class Log(object):
 
     def __str__(self):
         formatter = LogFormatter()
-        return str(formatter.format(self.message, **self.attrs))
+        return str(formatter.vformat(self.message, (), self.attrs))
 
     def __unicode__(self):
         formatter = LogFormatter()
-        return unicode(formatter.format(self.message, **self.attrs))
+        return unicode(formatter.vformat(self.message, (), self.attrs))
 
     def __repr__(self):
         return '<Log@%s: %r attrs=%r tags=%r>' % (self.ts, self.message,
@@ -453,6 +453,20 @@ class LogFormatter(Formatter):
             return Formatter.get_value(self, key, args, kwargs)
         except KeyError:
             return MISSING_KEY
+
+    def check_unused_args(self, used_args, args, kwargs):
+        self.unused_args = {}
+        for k, v in kwargs.iteritems():
+            if k not in used_args:
+                self.unused_args[k] = v
+
+    def vformat(self, format_string, args, kwargs):
+        self.unused_args = {}
+        ret = Formatter.vformat(self, format_string, args, kwargs)
+        if not self.unused_args:
+            return ret
+        extra_data =  ', '.join('{0}={1}'.format(*kv) for kv in self.unused_args.iteritems())
+        return '{0} ({1})'.format(ret, extra_data)
 
 def _dt2ts(dt):
     """

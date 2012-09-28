@@ -17,7 +17,8 @@ def do_listen():
     logger.subscribe()
     for record in logger.listen():
         ts = record.ts.strftime(options.time_format)
-        print('{0} {1}'.format(ts, str(record)))
+        formatted = '{0} {1}'.format(ts, str(record))
+        print(formatted)
 
 if __name__ == '__main__':
     parse_args()
