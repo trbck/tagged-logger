@@ -11,6 +11,9 @@ setup(
     packages=['tagged_logger', ],
     version='0.5',
     license='BSD',
+    scripts=[
+        'scripts/tagged_logger_listen.py',
+    ],
     install_requires=[
         'redis',
         'pytz',
