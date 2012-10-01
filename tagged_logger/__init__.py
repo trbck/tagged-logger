@@ -30,19 +30,21 @@ def check_logger(func):
     return wrapper
 
 
-def configure(prefix=None, **kwargs):
+def configure(prefix=None, archive_func=None, **redis_kwargs):
     """
     Configure logger
 
     :param prefix: prefix to store keys in redis database
-    :param \*\*kwargs: arguments to be passed to Redis constructor
-                       (`host`, `port` and `db` make sense)
+    :param archive_func: callable which is about to be invoked on every expire
+                         call
+    :param \*\*redis_kwargs: arguments to be passed to Redis constructor
+                             (`host`, `port` and `db` make sense)
     """
     global _logger
     if _logger:
-        _logger.configure(prefix=prefix, **kwargs)
+        _logger.configure(prefix=prefix, archive_func=archive_func, **redis_kwargs)
     else:
-        _logger = Logger(prefix=prefix, **kwargs)
+        _logger = Logger(prefix=prefix, archive_func=archive_func, **redis_kwargs)
     return _logger
 
 
@@ -169,14 +171,14 @@ def listen():
 
 
 @check_logger
-def expire(ts=None):
-    return _logger.expire(ts=ts)
+def expire(archive_func=None, ts=None):
+    return _logger.expire(archive_func=archive_func, ts=ts)
 
 
 class Logger(object):
 
-    def __init__(self, prefix=None, **kwargs):
-        self.configure(prefix=prefix, **kwargs)
+    def __init__(self, prefix=None, archive_func=None, **redis_kwargs):
+        self.configure(prefix=prefix, archive_func=archive_func, **redis_kwargs)
         self._context = threading.local()
 
     def ensure_context(self):
@@ -187,9 +189,11 @@ class Logger(object):
         if not hasattr(self._context, 'pubsub'):
             self._context.pubsub = self.redis.pubsub()
 
-    def configure(self, prefix=None, **kwargs):
+    def configure(self, prefix=None, archive_func=None, **redis_kwargs):
         self.prefix = prefix or ''
-        self.redis = redis.Redis(**kwargs)
+        self.archive_func = archive_func
+        self.redis_kwargs = redis_kwargs
+        self.redis = redis.Redis(**redis_kwargs)
 
     def full_cleanup(self):
         templates = ['msg:*', 'flow:*', 'counter']
@@ -377,7 +381,7 @@ class Logger(object):
                 data = message['data']
                 yield Log(data)
 
-    def expire(self, ts=None):
+    def expire(self, archive_func=None, ts=None):
         ts = _dt2ts(ts) if ts else time.time()
         flow_expire = self._key('flow:__expire__')
         flow_all = self._key('flow:__all__')
@@ -391,6 +395,10 @@ class Logger(object):
         pipe = self.redis.pipeline()
         for record in records:
             record_obj = Log(record)
+            if archive_func and callable(archive_func):
+                archive_func(record_obj)
+            elif self.archive_func and callable(self.archive_func):
+                self.archive_func(record_obj)
             pipe.zrem(flow_all, record_obj.id)
             for tag in record_obj.tags:
                 flow = self._key('flow:{0}'.format(tag))

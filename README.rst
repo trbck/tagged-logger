@@ -255,10 +255,27 @@ with the :class:`datetime.datetime` instance::
    >>> logger.log('expire on the day of doom',
                    expire=datetime.datetime(2012, 12, 21))
 
-Although the outdated records won't be removed automatically, but it's your
+Although the outdated records won't be removed automatically, and it's your
 code which should periodically launch the cleaning process::
 
    >>> logger.expire()
+
+Additionally, you would probably like not to remove these log messages, but
+to archive them instead. In this case, you could pass additional optional
+parameter to the function. This parameter is a callable which will be invoked
+for every record just before the removal.
+
+See the example below::
+
+   >>> archive = []
+   >>> def do_archive(record):
+   ...     archive.append(record)
+   >>> logger.expire(archive_func=do_archive)
+
+Additionally, you can pass the :param:`archive_func` to the logger initializer::
+
+   >>> logger.configure(archive_func=do_archive)
+
 
 Behind the scenes
 -----------------
