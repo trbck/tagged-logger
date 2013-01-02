@@ -237,7 +237,6 @@ class Logger(object):
         if expire:
             expire_flow_key = self._key('flow:__expire__')
             expire_ts = _dt2ts(expire)
-            print 'zadd', expire_flow_key, _id, expire_ts
             self.redis.zadd(expire_flow_key, _id, expire_ts)
         # publish message
         pubsub_channel = self._key('log-records')
@@ -274,7 +273,7 @@ class Logger(object):
             raise RuntimeError('Unable to filter for more than one tag. The '
                                'filter expression is {0}'.format(kwargs))
         elif len(kwargs.keys()) == 1:
-            key, value = kwargs.items()[0]
+            key, value = list(kwargs.items())[0]
             tag = '{0}:{1}'.format(key, value)
 
         key = self._key('flow:{0}', tag)
@@ -287,7 +286,7 @@ class Logger(object):
                                                  num=limit)
         if not record_ids:
             return []
-        record_keys = [self._key('msg:{0}', _id) for _id in record_ids]
+        record_keys = [self._key('msg:{0}', _id.decode('utf-8')) for _id in record_ids]
         records = self.redis.mget(record_keys)
         return [Log(record) for record in records]
 
@@ -389,7 +388,7 @@ class Logger(object):
         record_ids = self.redis.zrevrangebyscore(flow_expire, ts, 0)
         if not record_ids:
             return 0
-        record_msgs = [self._key('msg:{0}'.format(_id)) for _id in record_ids]
+        record_msgs = [self._key('msg:{0}', _id.decode('utf-8')) for _id in record_ids]
 
         records = self.redis.mget(*record_msgs)
         pipe = self.redis.pipeline()
@@ -415,7 +414,7 @@ class TaggingAttribute(object):
         self.attrs = attrs
 
     def get_tags(self):
-        return ['{0}:{1}'.format(*kv) for kv in self.attrs.iteritems()]
+        return ['{0}:{1}'.format(*kv) for kv in self.attrs.items()]
 
     def get_attrs(self):
         return self.attrs
@@ -428,7 +427,7 @@ class Log(object):
 
 
     def __init__(self, record_str):
-        record = json.loads(record_str)
+        record = json.loads(record_str.decode('utf-8'))
         self.id = record['id']
         self.message = record['message']
         self.attrs = record['attrs']
@@ -464,7 +463,7 @@ class LogFormatter(Formatter):
 
     def check_unused_args(self, used_args, args, kwargs):
         self.unused_args = {}
-        for k, v in kwargs.iteritems():
+        for k, v in kwargs.items():
             if k not in used_args:
                 self.unused_args[k] = v
 
@@ -473,7 +472,7 @@ class LogFormatter(Formatter):
         ret = Formatter.vformat(self, format_string, args, kwargs)
         if not self.unused_args:
             return ret
-        extra_data =  ', '.join('{0}={1}'.format(*kv) for kv in self.unused_args.iteritems())
+        extra_data =  ', '.join('{0}={1}'.format(*kv) for kv in self.unused_args.items())
         return '{0} ({1})'.format(ret, extra_data)
 
 def _dt2ts(dt):
