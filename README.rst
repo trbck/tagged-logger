@@ -3,7 +3,7 @@ Tagged logger
 
 Tagged logger is not a yet another logging module handler. Instead it's a fully
 fledged package intended to store tagged log records into a Redis database.
-Log records can be string messages or any old jsonable objects.
+Log records can be string messages with optional attributes and tags.
 
 Usage
 -----

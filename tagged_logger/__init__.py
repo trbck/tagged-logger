@@ -8,7 +8,6 @@ import pytz
 import redis
 import time
 
-from functools import wraps
 from contextlib import contextmanager
 from string import Formatter
 
@@ -16,18 +15,14 @@ from string import Formatter
 _logger = None
 MISSING_KEY = '(undefined)'
 
-def check_logger(func):
+def check_logger():
     """
-    Decorator which checks whether a global logger is configured
+    Function which checks whether a global logger is configured
 
     Used mostly internally
     """
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        if not _logger:
-            raise RuntimeError('Redis logger is not configured')
-        return func(*args, **kwargs)
-    return wrapper
+    if not _logger:
+        raise RuntimeError('Redis logger is not configured')
 
 
 def configure(prefix=None, archive_func=None, **redis_kwargs):
@@ -48,15 +43,14 @@ def configure(prefix=None, archive_func=None, **redis_kwargs):
     return _logger
 
 
-@check_logger
 def full_cleanup():
     """
     Remove all records from the store
     """
+    check_logger()
     return _logger.full_cleanup()
 
 
-@check_logger
 def get(tag='__all__', limit=None, min_ts=None, max_ts=None, **kwargs):
     """
     Get all records from the store
@@ -80,98 +74,128 @@ def get(tag='__all__', limit=None, min_ts=None, max_ts=None, **kwargs):
               converted to seconds since epoch accordingly
 
     """
+    check_logger()
     return _logger.get(tag=tag, limit=limit, min_ts=min_ts, max_ts=max_ts, **kwargs)
 
 
-@check_logger
 def get_latest(tag='__all__', **kwargs):
     """
     Get latest log record with a given tag or None
 
     :rtype: :class:`tagged_logger.Log`
     """
+    check_logger()
     return _logger.get_latest(tag=tag, **kwargs)
 
 
-@check_logger
 def log(message, *tagging_attrs, **attrs):
     """
-    Create a new log record, optionally marked with one or more tags
+    Create a new log record, optionally with one or more tags and attributes
 
-    :param \*tagging_attrs: list of tagging attributes
-    :type message: string or any jsonable object
+    Keyword attributes may contain several keys, treated specially
+
+    :param message: main logging message
+    :type message: str
+
+    :param \*tagging_attrs: list of tagging attributes, which are used to atach
+    key-value pairs to the message, as well as add corresponding tags to it.
+    :type \*tagging_attrs: log.ta instances
+
+    :param tags: list of tags which current message should be marked with
     :type tags: list of strings
+
     :param ts: optional timestamp of the log record
-    :type ts: :class:`datetime.datetime` object with optional timestamp set
+    :type ts: datetime.datetime
+
     :param expire: optional expiration mark
-    :type expire: :class:`datetime.datetime` object or :class:`datetime.timedelta`
-              or :type:`int` (expiration in seconds since now)
+    :type expire: datetime.datetime or datetime.timedelta or in (expiration
+    in seconds since now)
+
     :param \*\*attrs: dictionary of log attributes to be stored in the
-                      database
+    database. These attributes can also be used to format log message
 
     .. note:: Naive datetime objects are considered as having UTC tz and
               converted to seconds since epoch accordingly
+
+    Examples:
+
+    .. code-block:: python
+
+        # create simple message
+        log('hello world')
+
+        # create a message which will be found by tag "security_violation"
+        # containing remote address
+        log('attempt to break in from {ip}', tags=['security_violation'], ip='127.0.0.1')
+
+        # similar example, but we store also the tag "ip:127.0.0.1" automatically
+        # with the tagging attribute
+        log('attempt to break in from {ip}', ta(ip='127.0.0.1'), tags=['security_violation'])
+
+
+
     """
+    check_logger()
     return _logger.log(message, *tagging_attrs, **attrs)
 
 
-@check_logger
 def context(*tags, **attrs):
+    check_logger()
     return _logger.context(*tags, **attrs)
 
 
-@check_logger
 def add_tags(*tags):
+    check_logger()
     return _logger.add_tags(*tags)
 
 
-@check_logger
 def rm_tags(*tags):
+    check_logger()
     return _logger.rm_tags(*tags)
 
 
-@check_logger
 def add_attrs(**attrs):
+    check_logger()
     return _logger.add_attrs(**attrs)
 
 
-@check_logger
 def rm_attrs(*attrs):
+    check_logger()
     return _logger.rm_attrs(*attrs)
 
 
-@check_logger
 def add_tagging_attrs(*tagging_attrs, **kwargs):
+    check_logger()
     return _logger.add_tagging_attrs(*tagging_attrs, **kwargs)
 
 
-@check_logger
 def rm_tagging_attrs(*tagging_attrs, **kwargs):
+    check_logger()
     return _logger.rm_tagging_attrs(*tagging_attrs, **kwargs)
 
 
-@check_logger
 def reset_context():
+    check_logger()
     return _logger.reset_context()
 
 
-@check_logger
 def subscribe():
+    check_logger()
     return _logger.subscribe()
 
 
-@check_logger
 def unsubscribe():
+    check_logger()
     return _logger.unsubscribe()
 
 
-@check_logger
 def listen():
+    check_logger()
     return _logger.listen()
 
 
-@check_logger
 def expire(archive_func=None, ts=None):
+    check_logger()
     return _logger.expire(archive_func=archive_func, ts=ts)
 
 
