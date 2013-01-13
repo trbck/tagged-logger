@@ -263,7 +263,7 @@ class Logger(object):
             expire_ts = _dt2ts(expire)
             self.redis.zadd(expire_flow_key, _id, expire_ts)
         # publish message
-        pubsub_channel = self._key('log-records')
+        pubsub_channel = get_pubsub_channel(self.prefix)
         self.redis.publish(pubsub_channel, str_log_record)
 
     def _extend_attrs(self, tagging_attrs, attrs):
@@ -323,13 +323,7 @@ class Logger(object):
         return self.redis.incr(cnt)
 
     def _key(self, key, *args, **kwargs):
-        if self.prefix:
-            template = '{0}:{1}'.format(self.prefix, key)
-        else:
-            template = key
-        if args or kwargs:
-            template = template.format(*args, **kwargs)
-        return template
+        return get_key(self.prefix, key, *args, **kwargs)
 
     @contextmanager
     def context(self, *tags, **attrs):
@@ -512,3 +506,30 @@ def _dt2ts(dt):
     micro = dt.microsecond / 1e6
     ts = calendar.timegm(dt.timetuple())
     return ts + micro
+
+
+def get_key(prefix, key, *args, **kwargs):
+    """
+    Return formatted variant of the Redis key
+
+    :param prefix: redis client prefix
+    :param key: key name
+    :param \*args: arguments to format key
+    :param \*\*kwargs: kwargs to format key
+    :return: string object with formatted key
+    """
+    if prefix:
+        template = '{0}:{1}'.format(prefix, key)
+    else:
+        template = key
+    if args or kwargs:
+        template = template.format(*args, **kwargs)
+    return template
+
+def get_pubsub_channel(prefix):
+    """
+    Return key for pubsub channel, used by tagged-logger
+    :param prefix: redis client prefix
+    :return: string with pubsub channel name
+    """
+    return get_key(prefix, 'log-records')
